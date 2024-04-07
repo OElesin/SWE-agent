@@ -43,6 +43,7 @@ setuptools.setup(
         'tenacity',
         'together',
         'unidiff',
+        'boto3'
     ],
     include_package_data=True,
 )

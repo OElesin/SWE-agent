@@ -17,6 +17,7 @@ from tenacity import (
     retry_if_not_exception_type,
 )
 from typing import Optional
+from boto3 import client, Session
 
 logger = logging.getLogger("api_models")
 
@@ -48,7 +49,7 @@ class APIStats(Serializable):
             field.name: getattr(self, field.name) + getattr(other, field.name)
             for field in fields(self)
         })
-    
+
     def replace(self, other):
         if not isinstance(other, APIStats):
             raise TypeError("Can only replace APIStats with APIStats")
@@ -514,7 +515,7 @@ class TogetherModel(BaseModel):
             "max_context": 32768,
             "cost_per_input_token": 6e-07,
             "cost_per_output_token": 6e-07,
-        },           
+        },
     }
 
     SHORTCUTS = {
@@ -574,6 +575,100 @@ class TogetherModel(BaseModel):
         output_tokens = completion["output"]["usage"]["completion_tokens"]
         self.update_stats(input_tokens, output_tokens)
         return response
+
+
+class AWSBedrockModel(BaseModel):
+
+    MODELS = {
+        "amazon.titan-tg1-large": {
+            "max_context": 8094,
+            "cost_per_input_token": 0,
+            "cost_per_output_token": 0
+        },
+        "amazon.titan-text-lite-v1": {
+            "max_context": 4096,
+            "cost_per_input_token": 0,
+            "cost_per_output_token": 0
+        },
+        "amazon.titan-text-express-v1": {
+            "max_context": 8094,
+            "cost_per_input_token": 0,
+            "cost_per_output_token": 0
+        },
+    }
+
+    SHORTCUTS = {
+        "amazon-titan-large": "amazon.titan-tg1-large",
+        "amazon-titan-lite": "amazon.titan-text-lite-v1",
+        "amazon-titan-express": "amazon.titan-text-express-v1",
+    }
+
+    def __init__(self, args: ModelArguments, commands: list[Command]):
+        """"""
+        super().__init__(args, commands)
+        cfg = config.Config(os.path.join(os.getcwd(), "keys.cfg"))
+        aws_profile = cfg.get('AWS_PROFILE', 'default')
+        session = Session(profile_name=aws_profile)
+        aws_region = cfg.get('AWS_REGION', 'us-east-1')
+        self.bedrock_runtime = session.client('bedrock-runtime', region_name=aws_region)
+        self.accept = 'application/json'
+        self.content_type = 'application/json'
+
+    def history_to_messages(
+            self, history: list[dict[str, str]], is_demonstration: bool = False
+    ) -> str:
+        """
+        :param history:
+        :param is_demonstration:
+        :return:
+        """
+        if is_demonstration:
+            history = [entry for entry in history if entry["role"] != "system"]
+
+        if self.api_model.startswith('amazon'):
+            # Map history to Amazon Titan format
+            mapping = {"user": "User", "assistant": "Bot", "system": "Bot"}
+            prompt = [f'{mapping[d["role"]]}: {d["content"]}' for d in history]
+            prompt = "\n".join(prompt)
+            prompt = f"{prompt}\nBot:"
+            return prompt
+
+    def query(self, history: list[dict[str, str]]) -> str:
+        """
+        :param history:
+        :return:
+        """
+        # implement for Claude LLMs
+        if self.api_model.startswith('amazon'):
+            messages = self.history_to_messages(history)
+            prompt = json.dumps({
+                "inputText": messages,
+                "textGenerationConfig": {
+                    "maxTokenCount": 4096,
+                    "stopSequences": [],
+                    "temperature": self.args.temperature,
+                    "topP": self.args.top_p
+                }
+            })
+            response = self.bedrock_runtime.invoke_model(
+                body=prompt,
+                modelId=self.api_model,
+                accept=self.accept, contentType=self.content_type
+            )
+            response_body = json.loads(response.get("body").read())
+            finish_reason = response_body.get("error")
+            if finish_reason is not None:
+                raise ContextWindowExceededError(f'Error occured with the {self.api_model}. Reason {finish_reason}')
+            input_tokens = response_body['inputTextTokenCount']
+            results = response_body['results']
+            result = "\n".join([x['outputText'] for x in results])
+            output_tokens = sum([x['tokenCount'] for x in results])
+            # Calculate + update costs, return response
+            self.update_stats(
+                input_tokens,
+                output_tokens
+            )
+            return result
 
 
 class HumanModel(BaseModel):
@@ -650,7 +745,7 @@ class HumanThoughtModel(HumanModel):
                 break
             thought_all += thought
             thought = input("... ")
-        
+
         action = super().query(history, action_prompt="Action: ")
 
         return f"{thought_all}\n```\n{action}\n```"
@@ -708,5 +803,7 @@ def get_model(args: ModelArguments, commands: Optional[list[Command]] = None):
         return AnthropicModel(args, commands)
     elif args.model_name.startswith("ollama"):
         return OllamaModel(args, commands)
+    elif args.model_name.startswith('bedrock'):
+        return AWSBedrockModel(args, commands)
     else:
         raise ValueError(f"Invalid model name: {args.model_name}")

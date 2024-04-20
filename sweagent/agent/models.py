@@ -577,7 +577,7 @@ class TogetherModel(BaseModel):
         return response
 
 
-class AWSBedrockModel(BaseModel):
+class AmazonBedrockModel(BaseModel):
 
     MODELS = {
         "amazon.titan-tg1-large": {
@@ -804,6 +804,6 @@ def get_model(args: ModelArguments, commands: Optional[list[Command]] = None):
     elif args.model_name.startswith("ollama"):
         return OllamaModel(args, commands)
     elif args.model_name.startswith('bedrock'):
-        return AWSBedrockModel(args, commands)
+        return AmazonBedrockModel(args, commands)
     else:
         raise ValueError(f"Invalid model name: {args.model_name}")

@@ -30,6 +30,7 @@ This file defines the abstraction for running inference on API models. In additi
 - `HumanModel`: Handles inference for human task worker
 - `ModelArguments`: Model name, hyperparameter, and cost limit arguments
 - `OpenAIModel`: Handles inference + cost logging for OpenAI models
+- `AmazonBedrockModel`: Handles inference + cost logging for Amazon Bedrock models
 
 #### `parsing.py`
 This file defines the abstraction for parsing the output of the model inference. The `Parsing` class is used to extract the relevant information from the model's output and format it into a response that can be used by the `Agent` class.

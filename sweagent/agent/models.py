@@ -598,9 +598,9 @@ class AmazonBedrockModel(BaseModel):
     }
 
     SHORTCUTS = {
-        "amazon-titan-large": "amazon.titan-tg1-large",
-        "amazon-titan-lite": "amazon.titan-text-lite-v1",
-        "amazon-titan-express": "amazon.titan-text-express-v1",
+        "bedrock-titan-large": "amazon.titan-tg1-large",
+        "bedrock-titan-lite": "amazon.titan-text-lite-v1",
+        "bedrock-titan-express": "amazon.titan-text-express-v1",
     }
 
     def __init__(self, args: ModelArguments, commands: list[Command]):
